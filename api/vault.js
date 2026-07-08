@@ -44,12 +44,11 @@ export default async function handler(req, res) {
       const sockets = socketData[it.itemInstanceId]?.sockets;
       if (!sockets) continue; // no sockets = not a weapon/armor, skip
       const perks = sockets.filter((s) => s.plugHash).map((s) => s.plugHash);
-      const g = gradeRoll(it.itemHash, perks);
       graded.push({
         itemHash: it.itemHash,
         instanceId: it.itemInstanceId,
         perks,
-        ...g,
+        grades: gradeRoll(it.itemHash, perks), // { all, pve, pvp }
       });
     }
 

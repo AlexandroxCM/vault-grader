@@ -167,3 +167,92 @@ body {
   .card { animation: rise 0.25s ease both; }
   @keyframes rise { from { opacity: 0; transform: translateY(4px); } }
 }
+
+/* ---- card as button ---- */
+.card { padding: 0; }
+.card-btn {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  background: none; border: none; color: inherit; font: inherit;
+  padding: 10px 12px; cursor: pointer; text-align: left;
+}
+.card-btn:hover { background: var(--hull-2); }
+.card-btn:focus-visible { outline: 2px solid var(--tier-B); outline-offset: -2px; }
+
+/* ---- detail view ---- */
+.overlay {
+  position: fixed; inset: 0; background: rgba(6, 6, 10, 0.78);
+  display: flex; justify-content: center; align-items: flex-start;
+  padding: 6vh 16px; overflow-y: auto; z-index: 10;
+}
+.sheet {
+  background: var(--hull); border: 1px solid var(--line);
+  width: 100%; max-width: 640px; padding: 22px;
+}
+.sheet-head { display: flex; align-items: center; gap: 14px; margin-bottom: 6px; }
+.sheet-icon { width: 56px; height: 56px; background: var(--hull-2); }
+.sheet-title { flex: 1; min-width: 0; }
+.sheet-title h3 {
+  font-family: var(--display); font-weight: 600; font-size: 20px; margin: 0;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.grade-lg { width: 62px; height: 52px; }
+.grade-lg .grade-letter { font-size: 22px; }
+.close { flex-shrink: 0; }
+.verdict { color: var(--mist); font-size: 13.5px; margin: 8px 0 18px; }
+
+.sheet h4 {
+  font-family: var(--display); font-weight: 600; font-size: 12px;
+  text-transform: uppercase; letter-spacing: 0.16em; color: var(--mist);
+  margin: 18px 0 10px;
+}
+
+.perks { display: flex; flex-wrap: wrap; gap: 8px; }
+.perk {
+  display: inline-flex; align-items: center; gap: 7px;
+  background: var(--hull-2); border: 1px solid var(--line);
+  padding: 6px 11px 6px 7px; font-size: 13px;
+}
+.perk img { width: 22px; height: 22px; filter: invert(0.9); }
+.perk-hit { border-color: var(--tier-S); box-shadow: inset 0 0 0 1px var(--tier-S); }
+
+.stats { display: flex; flex-direction: column; gap: 7px; }
+.stat { display: flex; align-items: center; gap: 12px; }
+.stat-name { width: 170px; flex-shrink: 0; font-size: 13px; color: var(--mist); text-align: right; }
+.stat-bar { flex: 1; height: 12px; background: var(--hull-2); position: relative; }
+.stat-bar i { position: absolute; inset: 0 auto 0 0; background: var(--bone); display: block; }
+.stat-num { background: transparent; }
+.stat-value { width: 44px; font-size: 13px; font-variant-numeric: tabular-nums; }
+
+@media (max-width: 560px) {
+  .stat-name { width: 120px; }
+  .sheet { padding: 16px; }
+}
+
+/* ---- v3: modes, exotic tier, perk columns ---- */
+:root { --tier-E: #cd9d5a; }
+.tier-E { background: var(--tier-E); }
+.tierline-E { border-left-color: var(--tier-E); }
+
+.mode-row { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; flex-wrap: wrap; }
+.modes { display: flex; border: 1px solid var(--line); }
+.mode {
+  font-family: var(--display); text-transform: uppercase; letter-spacing: 0.1em;
+  font-size: 12px; padding: 9px 18px; background: none; border: none;
+  color: var(--mist); cursor: pointer;
+}
+.mode.active { background: var(--bone); color: var(--void); }
+.mode-hint { font-size: 12.5px; }
+
+.mode-grades { display: flex; gap: 18px; margin: 4px 0 12px; }
+.mode-grade { display: flex; flex-direction: column; align-items: center; gap: 5px; }
+.mode-grade-label {
+  font-family: var(--display); font-size: 11px; text-transform: uppercase;
+  letter-spacing: 0.14em; color: var(--mist);
+}
+
+.cols { display: flex; flex-direction: column; gap: 12px; }
+.col-label {
+  font-size: 11px; color: var(--mist); text-transform: uppercase;
+  letter-spacing: 0.1em; display: block; margin-bottom: 6px;
+}
+.perk-owned { background: var(--line); }
