@@ -6,6 +6,7 @@ const TIER_LABEL = {
   E: "Exotic", "?": "Unrated",
 };
 const TIER_ORDER_WORST_FIRST = { D: 0, C: 1, B: 2, A: 3, S: 4, E: 5, "?": 6 };
+const TIER_ORDER_BEST_FIRST = { S: 0, A: 1, B: 2, C: 3, D: 4, E: 5, "?": 6 };
 const MODES = [["all", "All"], ["pve", "PvE"], ["pvp", "PvP"]];
 const tierClass = (t) => `tier-${t === "?" ? "U" : t}`;
 
@@ -16,7 +17,18 @@ function effectiveGrade(w, mode) {
   return g;
 }
 
+function useRoute() {
+  const [route, setRoute] = useState(window.location.hash);
+  useEffect(() => {
+    const onHash = () => setRoute(window.location.hash);
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+  return route;
+}
+
 export default function App() {
+  const route = useRoute();
   const [db, setDb] = useState(null);
   const [perkdb, setPerkdb] = useState(null);
   const [vault, setVault] = useState(null);
@@ -27,6 +39,8 @@ export default function App() {
   const [search, setSearch] = useState("");
   const [mode, setMode] = useState("all");
   const [selected, setSelected] = useState(null);
+  const [dupesView, setDupesView] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -85,22 +99,79 @@ export default function App() {
       const q = search.trim().toLowerCase();
       list = list.filter((w) => w.name.toLowerCase().includes(q) || w.type.toLowerCase().includes(q));
     }
+    const order = worstFirst ? TIER_ORDER_WORST_FIRST : TIER_ORDER_BEST_FIRST;
     return [...list].sort((a, b) => {
-      const d =
-        TIER_ORDER_WORST_FIRST[effectiveGrade(a, mode).tier] -
-        TIER_ORDER_WORST_FIRST[effectiveGrade(b, mode).tier];
-      return worstFirst ? d || a.name.localeCompare(b.name) : -d || a.name.localeCompare(b.name);
+      const d = order[effectiveGrade(a, mode).tier] - order[effectiveGrade(b, mode).tier];
+      return d || a.name.localeCompare(b.name);
     });
   }, [weapons, filter, worstFirst, search, mode]);
+
+  // Group same-name copies; rank within group; mark keep/shard.
+  const dupeGroups = useMemo(() => {
+    const byName = new Map();
+    for (const w of weapons) {
+      if (search.trim() && !w.name.toLowerCase().includes(search.trim().toLowerCase())) continue;
+      if (!byName.has(w.name)) byName.set(w.name, []);
+      byName.get(w.name).push(w);
+    }
+    const groups = [];
+    for (const copies of byName.values()) {
+      if (copies.length < 2) continue;
+      const ranked = [...copies].sort((a, b) => {
+        const ga = effectiveGrade(a, mode), gb = effectiveGrade(b, mode);
+        return TIER_ORDER_BEST_FIRST[ga.tier] - TIER_ORDER_BEST_FIRST[gb.tier] || gb.ratio - ga.ratio;
+      });
+      const top = effectiveGrade(ranked[0], mode);
+      groups.push({
+        name: ranked[0].name,
+        type: ranked[0].type,
+        copies: ranked.map((w, i) => {
+          const g = effectiveGrade(w, mode);
+          const tie = i > 0 && g.tier === top.tier && g.ratio === top.ratio;
+          return { w, verdict: i === 0 ? "keep" : tie ? "tie" : "shard" };
+        }),
+      });
+    }
+    return groups.sort((a, b) => b.copies.length - a.copies.length || a.name.localeCompare(b.name));
+  }, [weapons, mode, search]);
+
+  const shardList = useMemo(() => {
+    const lines = new Set();
+    for (const g of dupeGroups)
+      for (const c of g.copies)
+        if (c.verdict === "shard")
+          lines.add(`${c.w.name} (${c.w.type}) — duplicate, worse than your best copy`);
+    for (const w of weapons)
+      if (effectiveGrade(w, mode).tier === "D")
+        lines.add(`${w.name} (${w.type}) — no community roll match`);
+    return [...lines].sort();
+  }, [dupeGroups, weapons, mode]);
+
+  const copyShardList = () => {
+    const text = `Vault Grader shard list (${mode.toUpperCase()} · ${new Date().toLocaleDateString()})\n\n` + shardList.join("\n");
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
 
   return (
     <div className="shell">
       <header className="topbar">
         <div className="brand"><span className="brand-mark" aria-hidden="true" />Vault Grader</div>
-        {status === "ready" && <a className="ghost-btn" href="/api/logout">Sign out</a>}
+        <nav className="nav">
+          <a className={`ghost-btn ${route.startsWith("#/db") ? "toggled" : ""}`} href="#/db">Database</a>
+          <a className={`ghost-btn ${!route.startsWith("#/db") ? "toggled" : ""}`} href="#/">My vault</a>
+          {status === "ready" && <a className="ghost-btn" href="/api/logout">Sign out</a>}
+        </nav>
       </header>
 
       {errorMsg && <div className="notice">{errorMsg}</div>}
+
+      {route.startsWith("#/db") ? (
+        <DbBrowser db={db} onOpen={setSelected} />
+      ) : (
+        <>
       {status === "signedout" && <Landing />}
       {status === "loading" && <p className="muted center">Checking your session…</p>}
       {status === "error" && (
@@ -129,12 +200,57 @@ export default function App() {
 
           <div className="controls">
             <input className="search" placeholder="Search your weapons" value={search} onChange={(e) => setSearch(e.target.value)} />
-            <button className="ghost-btn" onClick={() => setWorstFirst((v) => !v)}>
-              {worstFirst ? "Worst first" : "Best first"}
+            {!dupesView && (
+              <button className="ghost-btn" onClick={() => setWorstFirst((v) => !v)}>
+                {worstFirst ? "Worst first" : "Best first"}
+              </button>
+            )}
+            <button className={`ghost-btn ${dupesView ? "toggled" : ""}`} onClick={() => setDupesView((v) => !v)}>
+              Duplicates{dupeGroups.length ? ` (${dupeGroups.length})` : ""}
             </button>
+            {shardList.length > 0 && (
+              <button className="ghost-btn" onClick={copyShardList}>
+                {copied ? "Copied!" : `Copy shard list (${shardList.length})`}
+              </button>
+            )}
           </div>
 
-          {shown.length === 0 ? (
+          {dupesView ? (
+            dupeGroups.length === 0 ? (
+              <p className="muted center">No duplicates — your vault has one copy of everything shown.</p>
+            ) : (
+              <div className="dupes">
+                {dupeGroups.map((g) => (
+                  <section className="dupe-group" key={g.name}>
+                    <div className="dupe-head">
+                      <span className="dupe-name">{g.name}</span>
+                      <span className="muted">{g.type} · {g.copies.length} copies</span>
+                    </div>
+                    <ul className="grid">
+                      {g.copies.map(({ w, verdict }) => (
+                        <li key={w.instanceId} className={`card tierline-${effectiveGrade(w, mode).tier === "?" ? "U" : effectiveGrade(w, mode).tier}`}>
+                          <button className="card-btn" onClick={() => setSelected(w)}>
+                            {w.icon && <img className="icon" src={w.icon} alt="" loading="lazy" />}
+                            <div className="card-body">
+                              <span className={`chip chip-${verdict}`}>
+                                {verdict === "keep" ? "KEEP" : verdict === "tie" ? "TIE" : "SHARD"}
+                              </span>
+                            </div>
+                            <div className={`grade ${tierClass(effectiveGrade(w, mode).tier)}`}>
+                              <span className="grade-letter">{effectiveGrade(w, mode).tier}</span>
+                              <span className="grade-sub">
+                                {effectiveGrade(w, mode).tier === "?" ? "unrated" : effectiveGrade(w, mode).tier === "E" ? "exotic" : `${Math.round(effectiveGrade(w, mode).ratio * 100)}%`}
+                              </span>
+                            </div>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                ))}
+              </div>
+            )
+          ) : shown.length === 0 ? (
             <p className="muted center">Nothing matches. Clear the filter or search to see your full vault.</p>
           ) : (
             <ul className="grid">
@@ -146,10 +262,97 @@ export default function App() {
         </main>
       )}
 
+        </>
+      )}
+
       {selected && (
         <DetailView w={selected} mode={mode} perkdb={perkdb || {}} onClose={() => setSelected(null)} />
       )}
     </div>
+  );
+}
+
+const pick = (arr) => [...new Set(arr.filter(Boolean))];
+
+function DbBrowser({ db, onOpen }) {
+  const [f, setF] = useState({ q: "", season: "", slot: "", elem: "", rarity: "", breaker: "", src: "" });
+  const all = useMemo(() => {
+    if (!db) return [];
+    return Object.entries(db).map(([hash, w]) => ({ itemHash: Number(hash), ...w }));
+  }, [db]);
+
+  const opts = useMemo(() => ({
+    season: pick(all.map((w) => w.season)).sort((a, b) => b - a),
+    slot: pick(all.map((w) => w.slot)),
+    elem: pick(all.map((w) => w.elem)),
+    rarity: pick(all.map((w) => w.tier)),
+    breaker: pick(all.map((w) => w.breaker)),
+  }), [all]);
+
+  const SOURCES = ["Raid", "Dungeon", "Trials", "Iron Banner", "Nightfall", "Crucible", "Gambit"];
+
+  const shown = useMemo(() => {
+    return all.filter((w) => {
+      if (f.q && !w.name.toLowerCase().includes(f.q.toLowerCase()) && !w.type.toLowerCase().includes(f.q.toLowerCase())) return false;
+      if (f.season && String(w.season) !== f.season) return false;
+      if (f.slot && w.slot !== f.slot) return false;
+      if (f.elem && w.elem !== f.elem) return false;
+      if (f.rarity && w.tier !== f.rarity) return false;
+      if (f.breaker && w.breaker !== f.breaker) return false;
+      if (f.src && !(w.src || "").toLowerCase().includes(f.src.toLowerCase())) return false;
+      return true;
+    }).sort((a, b) => (b.season || 0) - (a.season || 0) || a.name.localeCompare(b.name));
+  }, [all, f]);
+
+  if (!db) return <p className="muted center">Loading weapon database…</p>;
+
+  const sel = (key, label, options) => (
+    <select className="filter-select" value={f[key]} onChange={(e) => setF({ ...f, [key]: e.target.value })}>
+      <option value="">{label}</option>
+      {options.map((o) => <option key={o} value={o}>{key === "season" ? `Season ${o}` : o}</option>)}
+    </select>
+  );
+
+  return (
+    <main>
+      <section className="dbhead">
+        <h1 className="db-title">Weapon database</h1>
+        <p className="muted">
+          Every weapon in the game — {all.length.toLocaleString()} of them — with full perk pools,
+          stats, and community god rolls. No sign-in needed.
+        </p>
+      </section>
+      <div className="filters">
+        <input className="search" placeholder="Search weapons" value={f.q} onChange={(e) => setF({ ...f, q: e.target.value })} />
+        {sel("season", "All seasons", opts.season)}
+        {sel("slot", "All slots", opts.slot)}
+        {sel("elem", "All elements", opts.elem)}
+        {sel("rarity", "All rarities", opts.rarity)}
+        {sel("breaker", "Any breaker", opts.breaker)}
+        <select className="filter-select" value={f.src} onChange={(e) => setF({ ...f, src: e.target.value })}>
+          <option value="">All sources</option>
+          {SOURCES.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+      </div>
+      <p className="muted count">{shown.length.toLocaleString()} weapons</p>
+      <ul className="grid">
+        {shown.slice(0, 120).map((w) => (
+          <li key={w.itemHash} className="card tierline-U">
+            <button className="card-btn" onClick={() => onOpen(w)}>
+              {w.icon && <img className="icon" src={w.icon} alt="" loading="lazy" />}
+              <div className="card-body">
+                <span className="card-name">{w.name}</span>
+                <span className="card-type">
+                  {[w.tier, w.elem, w.type].filter(Boolean).join(" · ")}
+                  {w.season ? ` · S${w.season}` : ""}
+                </span>
+              </div>
+            </button>
+          </li>
+        ))}
+      </ul>
+      {shown.length > 120 && <p className="muted center">Showing first 120 — narrow the filters to see the rest.</p>}
+    </main>
   );
 }
 
@@ -242,8 +445,16 @@ function PerkChip({ hash, perkdb, matched, owned }) {
 }
 
 function DetailView({ w, mode, perkdb, onClose }) {
+  const isPublic = !w.grades;
+  const [pub, setPub] = useState(null);
+  useEffect(() => {
+    if (!isPublic) return;
+    fetch(`/api/rolls?hash=${w.itemHash}`).then((r) => r.json()).then(setPub).catch(() => setPub({ found: false }));
+  }, [w.itemHash, isPublic]);
+
   const g = effectiveGrade(w, mode);
-  const best = new Set(g.bestRoll || []);
+  const recommended = isPublic ? new Set([...(pub?.pve || []), ...(pub?.pvp || [])]) : null;
+  const best = isPublic ? recommended : new Set(g.bestRoll || []);
   const ownedSet = new Set(w.perks || []);
   const ownedWeaponPerks = (w.perks || []).filter((h) => perkdb[h]);
   const missing = (g.bestRoll || []).filter((h) => !ownedSet.has(h));
@@ -262,7 +473,7 @@ function DetailView({ w, mode, perkdb, onClose }) {
           <button className="ghost-btn close" onClick={onClose}>Close</button>
         </div>
 
-        <div className="mode-grades">
+        {!isPublic && <div className="mode-grades">
           {modeGrades.map(([label, mg]) => (
             <div key={label} className="mode-grade">
               <span className="mode-grade-label">{label}</span>
@@ -274,17 +485,32 @@ function DetailView({ w, mode, perkdb, onClose }) {
               </div>
             </div>
           ))}
-        </div>
+        </div>}
 
         <p className="verdict">
-          {g.tier === "E"
+          {isPublic
+            ? pub === null
+              ? "Loading community recommendations…"
+              : pub.found
+              ? `${pub.rollCount.toLocaleString()} community-recommended rolls${pub.viaReissue ? " (via another version of this weapon)" : ""}. Recommended perks are outlined in gold below.`
+              : "No community recommendations for this weapon."
+            : g.tier === "E"
             ? "Exotics have fixed rolls — there's nothing to reroll, so they aren't graded against the wishlist."
             : g.tier === "?"
             ? "No community recommendations for this weapon in this mode."
-            : `${TIER_LABEL[g.tier]} — matched against ${g.rollsConsidered.toLocaleString()} community rolls${mode !== "all" ? ` for ${mode.toUpperCase()}` : ""}.`}
+            : `${TIER_LABEL[g.tier]} — matched against ${g.rollsConsidered.toLocaleString()} community rolls${mode !== "all" ? ` for ${mode.toUpperCase()}` : ""}.${w.grades?.viaReissue ? " Graded via another version of this weapon (yours is an older reissue)." : ""}`}
         </p>
+        {w.flavor && <p className="flavor">“{w.flavor}”</p>}
+        {(w.season || w.breaker || w.ammo || w.foundry || w.src) && (
+          <p className="meta muted">
+            {[w.season ? `Season ${w.season}` : null, w.slot, w.ammo ? `${w.ammo} ammo` : null,
+              w.breaker ? `Breaker: ${w.breaker}` : null, w.foundry ? `Foundry: ${w.foundry}` : null]
+              .filter(Boolean).join(" · ")}
+            {w.src ? ` · ${w.src}` : ""}
+          </p>
+        )}
 
-        <section>
+        {!isPublic && <section>
           <h4>Your roll</h4>
           {ownedWeaponPerks.length === 0 ? (
             <p className="muted">No perk data on this copy.</p>
@@ -305,7 +531,7 @@ function DetailView({ w, mode, perkdb, onClose }) {
               </div>
             </>
           )}
-        </section>
+        </section>}
 
         {cols.length > 0 && (
           <section>

@@ -6,6 +6,33 @@ import {
   getProfile,
 } from "./_lib/bungie.js";
 import { gradeRoll } from "./_lib/grader.js";
+import { readFileSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+// Reissue aliases: same weapon name, different item hash across seasons.
+let ALIASES = {};
+try {
+  ALIASES = JSON.parse(
+    readFileSync(join(dirname(fileURLToPath(import.meta.url)), "_lib", "aliases.json"), "utf8")
+  );
+} catch { /* file optional — grading still works without reissue fallback */ }
+
+function gradeWithAliases(itemHash, perks) {
+  let g = gradeRoll(itemHash, perks);
+  if (g.all.rollsConsidered > 0) return g;
+  // Exact hash unrated: try other versions of the same weapon.
+  for (const sib of ALIASES[String(itemHash)] || []) {
+    const g2 = gradeRoll(sib, perks);
+    if (
+      g2.all.rollsConsidered > 0 &&
+      (g.all.rollsConsidered === 0 || g2.all.ratio > g.all.ratio)
+    ) {
+      g = { ...g2, viaReissue: true };
+    }
+  }
+  return g;
+}
 
 export default async function handler(req, res) {
   const cookies = readCookies(req);
@@ -48,7 +75,7 @@ export default async function handler(req, res) {
         itemHash: it.itemHash,
         instanceId: it.itemInstanceId,
         perks,
-        grades: gradeRoll(it.itemHash, perks), // { all, pve, pvp }
+        grades: gradeWithAliases(it.itemHash, perks), // { all, pve, pvp, viaReissue? }
       });
     }
 

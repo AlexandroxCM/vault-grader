@@ -256,3 +256,36 @@ body {
   letter-spacing: 0.1em; display: block; margin-bottom: 6px;
 }
 .perk-owned { background: var(--line); }
+
+/* ---- v3.2: duplicates + shard list ---- */
+.ghost-btn.toggled { background: var(--bone); color: var(--void); border-color: var(--bone); }
+.dupes { display: flex; flex-direction: column; gap: 22px; }
+.dupe-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 8px; }
+.dupe-name {
+  font-family: var(--display); font-weight: 600; font-size: 15px;
+  text-transform: uppercase; letter-spacing: 0.08em;
+}
+.chip {
+  font-family: var(--display); font-weight: 700; font-size: 11px;
+  letter-spacing: 0.12em; padding: 3px 8px; width: fit-content;
+}
+.chip-keep { background: var(--tier-C); color: var(--void); }
+.chip-shard { background: var(--tier-D); color: var(--void); }
+.chip-tie { border: 1px solid var(--line); color: var(--mist); }
+
+/* ---- v4: database browser ---- */
+.nav { display: flex; gap: 8px; }
+.dbhead { margin-bottom: 20px; max-width: 640px; }
+.db-title {
+  font-family: var(--display); font-weight: 600; font-size: 26px;
+  text-transform: uppercase; letter-spacing: 0.08em; margin: 0 0 8px;
+}
+.filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.filters .search { flex: 1 1 220px; }
+.filter-select {
+  background: var(--hull); border: 1px solid var(--line); color: var(--bone);
+  padding: 10px 12px; font-family: var(--body); font-size: 13.5px;
+}
+.count { margin: 0 0 14px; font-size: 12.5px; }
+.flavor { color: var(--mist); font-style: italic; font-size: 13px; margin: 0 0 6px; }
+.meta { font-size: 12.5px; margin: 0 0 14px; }
