@@ -289,3 +289,9 @@ body {
 .count { margin: 0 0 14px; font-size: 12.5px; }
 .flavor { color: var(--mist); font-style: italic; font-size: 13px; margin: 0 0 6px; }
 .meta { font-size: 12.5px; margin: 0 0 14px; }
+
+/* ---- v5: vendors + detail glow-up ---- */
+.hero { width: 100%; height: auto; margin: 4px 0 10px; border: 1px solid var(--line); display: block; }
+.alt-btn { cursor: pointer; color: var(--bone); font-family: var(--body); font-size: 13px; }
+.alt-btn:hover { border-color: var(--mist); }
+.recoil { display: inline-block; font-size: 11px; color: var(--mist); width: 16px; text-align: center; }

@@ -161,6 +161,7 @@ export default function App() {
         <div className="brand"><span className="brand-mark" aria-hidden="true" />Vault Grader</div>
         <nav className="nav">
           <a className={`ghost-btn ${route.startsWith("#/db") ? "toggled" : ""}`} href="#/db">Database</a>
+          <a className={`ghost-btn ${route.startsWith("#/vendors") ? "toggled" : ""}`} href="#/vendors">Vendors</a>
           <a className={`ghost-btn ${!route.startsWith("#/db") ? "toggled" : ""}`} href="#/">My vault</a>
           {status === "ready" && <a className="ghost-btn" href="/api/logout">Sign out</a>}
         </nav>
@@ -170,6 +171,8 @@ export default function App() {
 
       {route.startsWith("#/db") ? (
         <DbBrowser db={db} onOpen={setSelected} />
+      ) : route.startsWith("#/vendors") ? (
+        <VendorsPage db={db} mode={mode} signedIn={status === "ready"} onOpen={setSelected} />
       ) : (
         <>
       {status === "signedout" && <Landing />}
@@ -266,13 +269,20 @@ export default function App() {
       )}
 
       {selected && (
-        <DetailView w={selected} mode={mode} perkdb={perkdb || {}} onClose={() => setSelected(null)} />
+        <DetailView w={selected} mode={mode} perkdb={perkdb || {}} db={db || {}} onSwap={setSelected} onClose={() => setSelected(null)} />
       )}
     </div>
   );
 }
 
 const pick = (arr) => [...new Set(arr.filter(Boolean))];
+
+// Community formula (as used by DIM): sign = horizontal tendency, magnitude = how far off vertical
+function recoilTendency(value) {
+  const d = Math.sin(((value + 5) * (Math.PI * 2)) / 20) * (100 - value);
+  if (Math.abs(d) < 6) return { label: "Tends vertical", deg: 0 };
+  return { label: d > 0 ? "Tends right" : "Tends left", deg: Math.max(-45, Math.min(45, -d / 2)) };
+}
 
 function DbBrowser({ db, onOpen }) {
   const [f, setF] = useState({ q: "", season: "", slot: "", elem: "", rarity: "", breaker: "", src: "" });
@@ -352,6 +362,61 @@ function DbBrowser({ db, onOpen }) {
         ))}
       </ul>
       {shown.length > 120 && <p className="muted center">Showing first 120 — narrow the filters to see the rest.</p>}
+    </main>
+  );
+}
+
+function VendorsPage({ db, mode, signedIn, onOpen }) {
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    fetch("/api/vendors")
+      .then(async (r) => {
+        if (r.status === 401) return setErr("signin");
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || "vendor fetch failed");
+        setData(d.vendors);
+      })
+      .catch((e) => setErr(String(e.message || e)));
+  }, []);
+
+  if (err === "signin")
+    return (
+      <main className="center">
+        <p className="muted">Sign in with Bungie to see this week's vendor stock, graded.</p>
+        <a className="cta" href="/api/login">Sign in with Bungie</a>
+      </main>
+    );
+  if (err) return <p className="muted center">Couldn't load vendors. {err}</p>;
+  if (!data || !db) return <p className="muted center">Checking this week's vendor stock…</p>;
+  if (data.length === 0) return <p className="muted center">No vendor weapon stock found right now.</p>;
+
+  return (
+    <main>
+      <section className="dbhead">
+        <h1 className="db-title">This week's vendors</h1>
+        <p className="muted">
+          Every weapon vendors are selling right now, graded against the community wishlist.
+          Anything S or A is worth the currency.
+        </p>
+      </section>
+      {data.map((v) => {
+        const items = v.items
+          .filter((it) => db[it.itemHash])
+          .map((it) => ({ ...it, ...db[it.itemHash] }))
+          .sort((a, b) => TIER_ORDER_BEST_FIRST[effectiveGrade(a, mode).tier] - TIER_ORDER_BEST_FIRST[effectiveGrade(b, mode).tier]);
+        if (!items.length) return null;
+        return (
+          <section className="dupe-group" key={v.name}>
+            <div className="dupe-head"><span className="dupe-name">{v.name}</span></div>
+            <ul className="grid">
+              {items.map((w, i) => (
+                <WeaponCard key={`${w.itemHash}-${i}`} w={w} mode={mode} onOpen={() => onOpen(w)} />
+              ))}
+            </ul>
+          </section>
+        );
+      })}
     </main>
   );
 }
@@ -444,7 +509,7 @@ function PerkChip({ hash, perkdb, matched, owned }) {
   );
 }
 
-function DetailView({ w, mode, perkdb, onClose }) {
+function DetailView({ w, mode, perkdb, db, onSwap, onClose }) {
   const isPublic = !w.grades;
   const [pub, setPub] = useState(null);
   useEffect(() => {
@@ -500,6 +565,7 @@ function DetailView({ w, mode, perkdb, onClose }) {
             ? "No community recommendations for this weapon in this mode."
             : `${TIER_LABEL[g.tier]} — matched against ${g.rollsConsidered.toLocaleString()} community rolls${mode !== "all" ? ` for ${mode.toUpperCase()}` : ""}.${w.grades?.viaReissue ? " Graded via another version of this weapon (yours is an older reissue)." : ""}`}
         </p>
+        {w.shot && <img className="hero" src={w.shot} alt="" loading="lazy" />}
         {w.flavor && <p className="flavor">“{w.flavor}”</p>}
         {(w.season || w.breaker || w.ammo || w.foundry || w.src) && (
           <p className="meta muted">
@@ -552,6 +618,36 @@ function DetailView({ w, mode, perkdb, onClose }) {
           </section>
         )}
 
+        {(w.curated || []).some((h) => perkdb[h]) && (
+          <section>
+            <h4>Curated roll (fixed by Bungie)</h4>
+            <div className="perks">
+              {w.curated.map((h) => (
+                <PerkChip key={h} hash={h} perkdb={perkdb} matched={false} />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {(() => {
+          const sibs = Object.entries(db || {})
+            .filter(([h, x]) => x.name === w.name && Number(h) !== w.itemHash)
+            .map(([h, x]) => ({ itemHash: Number(h), ...x }));
+          if (!sibs.length) return null;
+          return (
+            <section>
+              <h4>Other versions of this weapon</h4>
+              <div className="perks">
+                {sibs.map((s) => (
+                  <button key={s.itemHash} className="perk alt-btn" onClick={() => onSwap(s)}>
+                    {s.season ? `Season ${s.season}` : s.tier}
+                  </button>
+                ))}
+              </div>
+            </section>
+          );
+        })()}
+
         {w.stats?.length > 0 && (
           <section>
             <h4>Stats</h4>
@@ -559,6 +655,9 @@ function DetailView({ w, mode, perkdb, onClose }) {
               {w.stats.map(([name, value, isBar]) => (
                 <div className="stat" key={name}>
                   <span className="stat-name">{name}</span>
+                  {name === "Recoil Direction" && (
+                    <span className="recoil" style={{ transform: `rotate(${recoilTendency(value).deg}deg)` }} title={recoilTendency(value).label}>▲</span>
+                  )}
                   {isBar ? (
                     <span className="stat-bar"><i style={{ width: `${Math.min(value, 100)}%` }} /></span>
                   ) : (

@@ -84,6 +84,10 @@ for (const [hash, item] of Object.entries(items)) {
       stats.push([name, s.value, NUMERIC_STATS.has(name) ? 0 : 1]);
     }
     const foundryTrait = (item.traitIds || []).find((t) => t.startsWith("foundry."));
+    // Curated roll: the fixed perks Bungie ships on the weapon
+    const curated = (item.sockets?.socketEntries || [])
+      .map((e) => e.singleInitialItemHash)
+      .filter((h) => h && h !== 0);
     weapons[hash] = {
       name: p.name,
       icon: p.icon ? BASE + p.icon : null,
@@ -99,6 +103,8 @@ for (const [hash, item] of Object.entries(items)) {
       foundry: foundryTrait ? foundryTrait.replace("foundry.", "") : null,
       src: sourceByItem[hash] || null,
       flavor: item.flavorText || null,
+      shot: item.screenshot ? BASE + item.screenshot : null,
+      curated,
     };
   } else if (item.plug && PERK_CATEGORY.test(item.plug.plugCategoryIdentifier || "") && p.name) {
     perkdb[hash] = [p.name, p.icon ? BASE + p.icon : null];
